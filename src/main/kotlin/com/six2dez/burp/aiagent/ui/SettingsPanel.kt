@@ -106,7 +106,7 @@ class SettingsPanel(
         isVisible = false
     }
     private val refreshProfilesBtn = JButton("Refresh")
-    private val preferredBackend = JComboBox(backends.listBackendIds(settings).toTypedArray()).apply {
+    private val preferredBackend = JComboBox(backends.listAllBackendIds().toTypedArray()).apply {
         selectedItem = settings.preferredBackendId
         preferredSize = java.awt.Dimension(140, preferredSize.height)
         maximumSize = java.awt.Dimension(140, preferredSize.height)
@@ -223,6 +223,28 @@ class SettingsPanel(
         preferredSize = java.awt.Dimension(80, preferredSize.height)
         maximumSize = java.awt.Dimension(80, preferredSize.height)
     }
+    private val passiveAiExcludedExtensionsField = JTextField(settings.passiveAiExcludedExtensions, 30).apply {
+        toolTipText = "Comma-separated file extensions to skip (e.g. css,js,png,woff). Leave empty to disable."
+    }
+    private val passiveAiBatchSizeSpinner = JSpinner(
+        SpinnerNumberModel(settings.passiveAiBatchSize, 1, 5, 1)
+    ).apply {
+        preferredSize = java.awt.Dimension(60, preferredSize.height)
+        maximumSize = java.awt.Dimension(60, preferredSize.height)
+    }
+    private val passiveAiPersistentCacheEnabled = JCheckBox("Enable persistent cache", settings.passiveAiPersistentCacheEnabled)
+    private val passiveAiPersistentCacheTtlSpinner = JSpinner(
+        SpinnerNumberModel(settings.passiveAiPersistentCacheTtlHours, 1, 168, 1)
+    ).apply {
+        preferredSize = java.awt.Dimension(80, preferredSize.height)
+        maximumSize = java.awt.Dimension(80, preferredSize.height)
+    }
+    private val passiveAiPersistentCacheMaxMbSpinner = JSpinner(
+        SpinnerNumberModel(settings.passiveAiPersistentCacheMaxMb, 10, 500, 10)
+    ).apply {
+        preferredSize = java.awt.Dimension(80, preferredSize.height)
+        maximumSize = java.awt.Dimension(80, preferredSize.height)
+    }
     private val passiveAiMinSeverityCombo = JComboBox(arrayOf("LOW", "MEDIUM", "HIGH", "CRITICAL")).apply {
         selectedItem = settings.passiveAiMinSeverity.name
         preferredSize = java.awt.Dimension(100, preferredSize.height)
@@ -336,6 +358,7 @@ class SettingsPanel(
         maximumSize = java.awt.Dimension(120, preferredSize.height)
     }
     private val activeAiUseCollaborator = JCheckBox("Use Collaborator for SSRF OAST", settings.activeAiUseCollaborator)
+    private val activeAiAdaptivePayloads = JCheckBox("AI adaptive payloads", settings.activeAiAdaptivePayloads)
     private val activeAiRiskDescription = JLabel()
     private val activeAiStatusLabel = JLabel()
     private val activeAiViewFindings = JButton("View findings")
@@ -653,6 +676,18 @@ class SettingsPanel(
         passiveAiParamMaxCountSpinner.addChangeListener {
             applyPassiveAiSettings()
         }
+        passiveAiBatchSizeSpinner.addChangeListener {
+            applyPassiveAiSettings()
+        }
+        passiveAiPersistentCacheEnabled.addActionListener {
+            applyPassiveAiSettings()
+        }
+        passiveAiPersistentCacheTtlSpinner.addChangeListener {
+            applyPassiveAiSettings()
+        }
+        passiveAiPersistentCacheMaxMbSpinner.addChangeListener {
+            applyPassiveAiSettings()
+        }
         passiveAiViewFindings.addActionListener {
             showPassiveAiFindingsDialog()
         }
@@ -695,7 +730,7 @@ class SettingsPanel(
             if (level == "DANGEROUS") {
                 JOptionPane.showMessageDialog(
                     dialogParentComponent(),
-                    "⚠️ DANGEROUS mode may modify or delete data. Only use in authorized test environments.",
+                    "DANGEROUS mode may modify or delete data. Only use in authorized test environments.",
                     "Active Scanner Warning",
                     JOptionPane.WARNING_MESSAGE
                 )
@@ -705,6 +740,9 @@ class SettingsPanel(
             applyActiveAiSettings()
         }
         activeAiUseCollaborator.addActionListener {
+            applyActiveAiSettings()
+        }
+        activeAiAdaptivePayloads.addActionListener {
             applyActiveAiSettings()
         }
         activeAiViewFindings.addActionListener {
@@ -780,7 +818,7 @@ class SettingsPanel(
             JOptionPane.showMessageDialog(
                 dialogParentComponent(),
                 "Failed to save settings: ${e.message ?: "unknown error"}",
-                "AI Agent",
+                "Custom AI Agent",
                 JOptionPane.ERROR_MESSAGE
             )
         }
@@ -917,6 +955,11 @@ class SettingsPanel(
             passiveAiResponseBodyMaxChars = (passiveAiResponseBodyMaxCharsSpinner.value as? Int) ?: 4_000,
             passiveAiHeaderMaxCount = (passiveAiHeaderMaxCountSpinner.value as? Int) ?: 40,
             passiveAiParamMaxCount = (passiveAiParamMaxCountSpinner.value as? Int) ?: 15,
+            passiveAiExcludedExtensions = passiveAiExcludedExtensionsField.text.trim(),
+            passiveAiBatchSize = (passiveAiBatchSizeSpinner.value as? Int) ?: 3,
+            passiveAiPersistentCacheEnabled = passiveAiPersistentCacheEnabled.isSelected,
+            passiveAiPersistentCacheTtlHours = (passiveAiPersistentCacheTtlSpinner.value as? Int) ?: 24,
+            passiveAiPersistentCacheMaxMb = (passiveAiPersistentCacheMaxMbSpinner.value as? Int) ?: 50,
             contextRequestBodyMaxChars = (contextRequestBodyMaxCharsSpinner.value as? Int) ?: 4_000,
             contextResponseBodyMaxChars = (contextResponseBodyMaxCharsSpinner.value as? Int) ?: 8_000,
             contextCompactJson = contextCompactJson.isSelected,
@@ -930,6 +973,7 @@ class SettingsPanel(
             activeAiAutoFromPassive = activeAiAutoFromPassive.isSelected,
             activeAiScanMode = ScanMode.fromString(activeAiScanModeCombo.selectedItem as? String),
             activeAiUseCollaborator = activeAiUseCollaborator.isSelected,
+            activeAiAdaptivePayloads = activeAiAdaptivePayloads.isSelected,
             bountyPromptEnabled = bountyPromptEnabled.isSelected,
             bountyPromptDir = bountyPromptDir.text.trim(),
             bountyPromptAutoCreateIssues = bountyPromptAutoCreateIssues.isSelected,
@@ -1037,6 +1081,11 @@ class SettingsPanel(
         passiveAiResponseBodyMaxCharsSpinner.value = updated.passiveAiResponseBodyMaxChars
         passiveAiHeaderMaxCountSpinner.value = updated.passiveAiHeaderMaxCount
         passiveAiParamMaxCountSpinner.value = updated.passiveAiParamMaxCount
+        passiveAiExcludedExtensionsField.text = updated.passiveAiExcludedExtensions
+        passiveAiBatchSizeSpinner.value = updated.passiveAiBatchSize
+        passiveAiPersistentCacheEnabled.isSelected = updated.passiveAiPersistentCacheEnabled
+        passiveAiPersistentCacheTtlSpinner.value = updated.passiveAiPersistentCacheTtlHours
+        passiveAiPersistentCacheMaxMbSpinner.value = updated.passiveAiPersistentCacheMaxMb
         contextRequestBodyMaxCharsSpinner.value = updated.contextRequestBodyMaxChars
         contextResponseBodyMaxCharsSpinner.value = updated.contextResponseBodyMaxChars
         contextCompactJson.isSelected = updated.contextCompactJson
@@ -1053,6 +1102,7 @@ class SettingsPanel(
         activeAiRiskLevelCombo.selectedItem = updated.activeAiMaxRiskLevel.name
         activeAiScanModeCombo.selectedItem = updated.activeAiScanMode.name
         activeAiUseCollaborator.isSelected = updated.activeAiUseCollaborator
+        activeAiAdaptivePayloads.isSelected = updated.activeAiAdaptivePayloads
         updateActiveRiskDescription()
         refreshActiveAiStatus()
         onMcpEnabledChanged?.invoke(updated.mcpSettings.enabled)
@@ -1344,6 +1394,11 @@ class SettingsPanel(
             passiveAiResponseBodyMaxCharsSpinner = passiveAiResponseBodyMaxCharsSpinner,
             passiveAiHeaderMaxCountSpinner = passiveAiHeaderMaxCountSpinner,
             passiveAiParamMaxCountSpinner = passiveAiParamMaxCountSpinner,
+            passiveAiExcludedExtensionsField = passiveAiExcludedExtensionsField,
+            passiveAiBatchSizeSpinner = passiveAiBatchSizeSpinner,
+            passiveAiPersistentCacheEnabled = passiveAiPersistentCacheEnabled,
+            passiveAiPersistentCacheTtlSpinner = passiveAiPersistentCacheTtlSpinner,
+            passiveAiPersistentCacheMaxMbSpinner = passiveAiPersistentCacheMaxMbSpinner,
             contextRequestBodyMaxCharsSpinner = contextRequestBodyMaxCharsSpinner,
             contextResponseBodyMaxCharsSpinner = contextResponseBodyMaxCharsSpinner,
             contextCompactJson = contextCompactJson,
@@ -1360,7 +1415,7 @@ class SettingsPanel(
         
         val statusText = buildString {
             if (manualInProgress) {
-                append("🔄 Manual scan: $manualCompleted/$manualTotal | ")
+                append("Manual scan: $manualCompleted/$manualTotal | ")
             }
             if (status.enabled) {
                 val lastTime = if (status.lastAnalysisTime > 0) {
@@ -1368,9 +1423,9 @@ class SettingsPanel(
                         .withZone(ZoneId.systemDefault())
                     formatter.format(Instant.ofEpochMilli(status.lastAnalysisTime))
                 } else "Never"
-                append("✅ Passive: ON | Analyzed: ${status.requestsAnalyzed} | Issues: ${status.issuesFound} | Last: $lastTime")
+                append("Passive: ON | Analyzed: ${status.requestsAnalyzed} | Issues: ${status.issuesFound} | Last: $lastTime")
             } else {
-                append("⏸️ Passive: OFF")
+                append("Passive: OFF")
                 if (!manualInProgress) {
                     append(" | Total issues: ${status.issuesFound}")
                 }
@@ -1397,6 +1452,8 @@ class SettingsPanel(
             (passiveAiResponseBodyMaxCharsSpinner.value as? Int) ?: 4_000
         passiveAiScanner.headerMaxCount = (passiveAiHeaderMaxCountSpinner.value as? Int) ?: 40
         passiveAiScanner.paramMaxCount = (passiveAiParamMaxCountSpinner.value as? Int) ?: 15
+        // Propagate excluded extensions, batch size, and persistent cache via optimization settings
+        passiveAiScanner.applyOptimizationSettings(currentSettings())
         passiveAiScanner.setEnabled(passiveAiEnabled.isSelected)
         refreshPassiveAiStatus()
     }
@@ -1638,6 +1695,7 @@ class SettingsPanel(
             activeAiRiskLevelCombo = activeAiRiskLevelCombo,
             activeAiScanModeCombo = activeAiScanModeCombo,
             activeAiUseCollaborator = activeAiUseCollaborator,
+            activeAiAdaptivePayloads = activeAiAdaptivePayloads,
             activeAiRiskDescription = activeAiRiskDescription,
             activeAiStatusLabel = activeAiStatusLabel,
             activeAiViewFindings = activeAiViewFindings,
@@ -1661,9 +1719,9 @@ class SettingsPanel(
         val status = activeAiScanner.getStatus()
         val statusText = buildString {
             if (status.enabled) {
-                append("✅ Active: ON")
+                append("Active: ON")
                 if (status.scanning) {
-                    append(" | 🔄 Scanning")
+                    append(" | Scanning")
                     status.currentTarget?.let { target ->
                         append(" (${target.take(40)}...)")
                     }
@@ -1672,7 +1730,7 @@ class SettingsPanel(
                 append(" | Scans: ${status.scansCompleted}")
                 append(" | Confirmed: ${status.vulnsConfirmed}")
             } else {
-                append("⏸️ Active: OFF")
+                append("Active: OFF")
                 if (status.vulnsConfirmed > 0) {
                     append(" | Confirmed: ${status.vulnsConfirmed}")
                 }
@@ -2155,7 +2213,7 @@ class SettingsPanel(
 
     private fun openExternalCli(backendId: String, command: String) {
         if (command.isBlank()) {
-            JOptionPane.showMessageDialog(dialogParentComponent(), "Command is empty for $backendId.", "AI Agent", JOptionPane.WARNING_MESSAGE)
+            JOptionPane.showMessageDialog(dialogParentComponent(), "Command is empty for $backendId.", "Custom AI Agent", JOptionPane.WARNING_MESSAGE)
             return
         }
         try {
@@ -2179,7 +2237,7 @@ class SettingsPanel(
             process.start()
         } catch (e: Exception) {
             api.logging().logToError("Failed to open CLI for $backendId: ${e.message}")
-            JOptionPane.showMessageDialog(dialogParentComponent(), "Failed to open CLI: ${e.message}", "AI Agent", JOptionPane.ERROR_MESSAGE)
+            JOptionPane.showMessageDialog(dialogParentComponent(), "Failed to open CLI: ${e.message}", "Custom AI Agent", JOptionPane.ERROR_MESSAGE)
         }
     }
 
